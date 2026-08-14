@@ -9,7 +9,7 @@ graph TD
 
     subgraph infra ["Infrastructure Layer (Spring Boot Web / Data)"]
         Controller[Account & Payment Controller]
-        JPA[PostgreSQL / Spring Data JPA]
+        JPA[H2 / Spring Data JPA]
         EventListener[Receipt Event Listener]
     end
 
