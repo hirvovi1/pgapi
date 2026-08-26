@@ -6,6 +6,8 @@ import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.entity.TransactionRow;
 import fi.vjh.pgapi.infrastructure.jpa.TransactionRepository;
 import org.springframework.stereotype.Component;
+
+import java.util.Optional;
 import java.util.UUID;
 
 @Component
@@ -36,5 +38,10 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
             row.setStatus(status);
             transactionRepository.save(row);
         });
+    }
+
+    @Override
+    public Optional<TransactionStatus> findStatusById(UUID id) {
+        return transactionRepository.findById(id).map(TransactionRow::getStatus);
     }
 }
