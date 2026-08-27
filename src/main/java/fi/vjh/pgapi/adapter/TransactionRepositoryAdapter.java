@@ -44,4 +44,21 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
     public Optional<TransactionStatus> findStatusById(UUID id) {
         return transactionRepository.findById(id).map(TransactionRow::getStatus);
     }
+
+    @Override
+    public Optional<CallbackMessage> findById(UUID id) {
+        return transactionRepository.findById(id).map(row -> new CallbackMessage(
+                row.getIdempotencyKey(),
+                row.getId(),
+                row.getAccountIdFrom(),
+                row.getAccountIdTo(),
+                row.getAmountInCents(),
+                row.getStatus()
+        ));
+    }
+
+    @Override
+    public boolean existsByIdempotencyKey(UUID idempotencyKey) {
+        return transactionRepository.existsByIdempotencyKey(idempotencyKey);
+    }
 }

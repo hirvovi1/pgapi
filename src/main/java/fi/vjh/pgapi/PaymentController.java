@@ -4,7 +4,9 @@ import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.CreateAccount;
 import fi.vjh.pgapi.domain.Account;
 import fi.vjh.pgapi.domain.CallbackMessage;
+import fi.vjh.pgapi.domain.PaytrailWebhookPayload;
 import fi.vjh.pgapi.domain.TransactionStatus;
+import fi.vjh.pgapi.infrastructure.mock.PaytrailMockProvider;
 import fi.vjh.pgapi.infrastructure.queue.PaymentMessageQueue;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -21,6 +23,7 @@ public class PaymentController {
     private final CreateAccount createAccount;
     private final PaymentMessageQueue messageQueue;
     private final TransactionRepositoryPort transactionRepositoryPort;
+    private PaytrailMockProvider paytrailMockProvider;
 
     /**
      * Creates a controller backed by the account service, message queue, and
@@ -30,10 +33,12 @@ public class PaymentController {
      * @param messageQueue queue used to process transfers asynchronously
      * @param transactionRepositoryPort port used to persist transactions
      */
-    public PaymentController(CreateAccount createAccount, PaymentMessageQueue messageQueue, TransactionRepositoryPort transactionRepositoryPort) {
+    public PaymentController(CreateAccount createAccount, PaymentMessageQueue messageQueue,
+                             TransactionRepositoryPort transactionRepositoryPort, PaytrailMockProvider paytrailMockProvider) {
         this.createAccount = createAccount;
         this.messageQueue = messageQueue;
         this.transactionRepositoryPort = transactionRepositoryPort;
+        this.paytrailMockProvider = paytrailMockProvider;
     }
 
 
@@ -58,17 +63,23 @@ public class PaymentController {
     public record CreateAccountRequest(String ownerName, long initialBalanceCents) {
     }
 
-    /**
-     * Queues a money transfer for asynchronous processing.
-     *
-     * @param request transfer details
-     * @return an accepted response with the transaction ID, or a conflict when
-     *         the idempotency key has already been used
-     */
+    public record TransferResponse(
+            String message,
+            UUID transactionId,
+            String paymentUrl
+    ) {}
+
+
     @PostMapping("/transfer")
-    public ResponseEntity<String> transfer(@RequestBody TransferRequest request) {
+    public ResponseEntity<?> transfer(@RequestBody TransferRequest request) {
 
         UUID transactionId = UUID.randomUUID();
+
+        if (transactionRepositoryPort.existsByIdempotencyKey(request.idempotencyKey())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body("Idempotency key already used. Request ignored.");
+        }
+
         CallbackMessage message = new CallbackMessage(
                 request.idempotencyKey(),
                 transactionId,
@@ -78,20 +89,43 @@ public class PaymentController {
                 TransactionStatus.PENDING
         );
 
-
-        boolean addedForProcessing = messageQueue.enqueue(message);
-
-        if (!addedForProcessing) {
-            return ResponseEntity.status(HttpStatus.CONFLICT)
-                    .body("Idempotency key already used. Request ignored.");
-        }
-
+        // 1. TALLENNUS: Luodaan PENDING-transaktio tietokantaan ennen maksua
         transactionRepositoryPort.createPendingTransaction(message);
 
-        // 3. Palautetaan 202 Accepted. Asiakas tietää, että pyyntö on otettu vastaan ja käsitellään taustalla.
-        return ResponseEntity.status(HttpStatus.ACCEPTED)
-                .body("Transfer request accepted for processing. Transaction ID: " + message.transactionId());
+        // 2. MOCK PAYTRAIL CALL: Generoidaan maksusivun URL ja käynnistetään asynkroninen ajastin
+        String redirectUrl = paytrailMockProvider.initiatePayment(transactionId, request.amountInCents());
+
+        // 3. VASTAUS: Palautetaan 202 Accepted tyyppiturvallisella recordilla
+        TransferResponse response = new TransferResponse(
+                "Redirect to payment gateway",
+                transactionId,
+                redirectUrl
+        );
+
+        return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
+
+    @PostMapping("/api/v1/callbacks/paytrail")
+    public ResponseEntity<Void> paytrailCallback(@RequestBody PaytrailWebhookPayload payload) {
+        CallbackMessage message = transactionRepositoryPort.findById(payload.transactionId())
+                .map(transaction -> new CallbackMessage(
+                        transaction.idempotencyKey(),
+                        transaction.transactionId(),
+                        transaction.accountIdFrom(),
+                        transaction.accountIdTo(),
+                        payload.amountCents(),
+                        "OK".equalsIgnoreCase(payload.status())
+                                ? TransactionStatus.PENDING
+                                : TransactionStatus.FAILED
+                ))
+                .orElse(null);
+
+        if (message == null || !messageQueue.enqueue(message)) {
+            return ResponseEntity.notFound().build();
+        }
+        return ResponseEntity.accepted().build();
+    }
+
 
     /**
      * Request body for a money transfer.

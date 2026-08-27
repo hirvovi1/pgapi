@@ -10,5 +10,6 @@ public interface TransactionRepositoryPort {
     void createPendingTransaction(CallbackMessage message);
     void updateStatus(UUID id, TransactionStatus status);
     Optional<TransactionStatus> findStatusById(UUID id);
+    Optional<CallbackMessage> findById(UUID id);
+    boolean existsByIdempotencyKey(UUID idempotencyKey);
 }
-

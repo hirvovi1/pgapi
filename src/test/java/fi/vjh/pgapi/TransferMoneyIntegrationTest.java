@@ -1,9 +1,7 @@
 package fi.vjh.pgapi;
 
-import fi.vjh.pgapi.PaymentController;
 import fi.vjh.pgapi.entity.AccountRow;
 import fi.vjh.pgapi.infrastructure.jpa.AccountRepository;
-import fi.vjh.pgapi.infrastructure.jpa.TransactionRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +15,8 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.awaitility.Awaitility.await;
 
-@SpringBootTest // Boots Spring context, H2 in-memory DB, and the async background Worker
+@SpringBootTest(webEnvironment = SpringBootTest.WebEnvironment.DEFINED_PORT)
+// Boots Spring context, HTTP callback endpoint, H2 in-memory DB, and the async background Worker
 class TransferMoneyIntegrationTest {
 
     @Autowired
@@ -25,9 +24,6 @@ class TransferMoneyIntegrationTest {
 
     @Autowired
     private AccountRepository accountRepository;
-
-    @Autowired
-    private TransactionRepository transactionRepository;
 
     private UUID sourceAccountId;
     private UUID targetAccountId;
@@ -50,11 +46,15 @@ class TransferMoneyIntegrationTest {
         );
 
         // Act - Invoke controller (Returns immediately with 202 Accepted)
-        ResponseEntity<String> response = paymentController.transfer(request);
+        ResponseEntity<?> response = paymentController.transfer(request);
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
+        PaymentController.TransferResponse responseBody =
+                (PaymentController.TransferResponse) response.getBody();
+        assertThat(responseBody).isNotNull();
+        assertThat(responseBody.paymentUrl()).startsWith("https://paytrail.mock");
 
         // Assert - Use Awaitility to poll H2 database until background Worker completes the transfer
-        await().atMost(Duration.ofSeconds(2))
+        await().atMost(Duration.ofSeconds(6))
                 .untilAsserted(() -> {
                     AccountRow updatedSource = accountRepository.findById(sourceAccountId).orElseThrow();
                     AccountRow updatedTarget = accountRepository.findById(targetAccountId).orElseThrow();
@@ -72,12 +72,12 @@ class TransferMoneyIntegrationTest {
         );
 
         // Act & Assert 1 - First message passes through and goes into the queue
-        ResponseEntity<String> response1 = paymentController.transfer(request);
+        ResponseEntity<?> response1 = paymentController.transfer(request);
         assertThat(response1.getStatusCode()).isEqualTo(HttpStatus.ACCEPTED);
 
         // Act & Assert 2 - Immediate duplicate execution fails with 409 Conflict due to idempotency block
-        ResponseEntity<String> response2 = paymentController.transfer(request);
+        ResponseEntity<?> response2 = paymentController.transfer(request);
         assertThat(response2.getStatusCode()).isEqualTo(HttpStatus.CONFLICT);
-        assertThat(response2.getBody()).contains("Idempotency key already used");
+        assertThat(response2.getBody()).isEqualTo("Idempotency key already used. Request ignored.");
     }
 }
