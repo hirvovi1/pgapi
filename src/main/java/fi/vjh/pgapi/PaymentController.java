@@ -8,11 +8,13 @@ import fi.vjh.pgapi.domain.PaytrailWebhookPayload;
 import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.infrastructure.mock.PaytrailMockProvider;
 import fi.vjh.pgapi.infrastructure.queue.PaymentMessageQueue;
+import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 /**
@@ -80,22 +82,12 @@ public class PaymentController {
                     .body("Idempotency key already used. Request ignored.");
         }
 
-        CallbackMessage message = new CallbackMessage(
-                request.idempotencyKey(),
-                transactionId,
-                request.accountIdFrom(),
-                request.accountIdTo(),
-                request.amountInCents(),
-                TransactionStatus.PENDING
-        );
-
         // 1. TALLENNUS: Luodaan PENDING-transaktio tietokantaan ennen maksua
-        transactionRepositoryPort.createPendingTransaction(message);
+        transactionRepositoryPort.createPendingTransaction(createPendingTransactionMsg(request, transactionId));
 
         // 2. MOCK PAYTRAIL CALL: Generoidaan maksusivun URL ja käynnistetään asynkroninen ajastin
         String redirectUrl = paytrailMockProvider.initiatePayment(transactionId, request.amountInCents());
 
-        // 3. VASTAUS: Palautetaan 202 Accepted tyyppiturvallisella recordilla
         TransferResponse response = new TransferResponse(
                 "Redirect to payment gateway",
                 transactionId,
@@ -105,25 +97,37 @@ public class PaymentController {
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
+    private static @NonNull CallbackMessage createPendingTransactionMsg(TransferRequest request, UUID transactionId) {
+        return new CallbackMessage(
+                request.idempotencyKey(),
+                transactionId,
+                request.accountIdFrom(),
+                request.accountIdTo(),
+                request.amountInCents(),
+                TransactionStatus.PENDING
+        );
+    }
+
     @PostMapping("/api/v1/callbacks/paytrail")
     public ResponseEntity<Void> paytrailCallback(@RequestBody PaytrailWebhookPayload payload) {
-        CallbackMessage message = transactionRepositoryPort.findById(payload.transactionId())
-                .map(transaction -> new CallbackMessage(
-                        transaction.idempotencyKey(),
-                        transaction.transactionId(),
-                        transaction.accountIdFrom(),
-                        transaction.accountIdTo(),
-                        payload.amountCents(),
-                        "OK".equalsIgnoreCase(payload.status())
-                                ? TransactionStatus.PENDING
-                                : TransactionStatus.FAILED
-                ))
-                .orElse(null);
+        Optional<CallbackMessage> message = createMessageFromRequest(payload);
 
-        if (message == null || !messageQueue.enqueue(message)) {
-            return ResponseEntity.notFound().build();
-        }
+        if (message.isEmpty() || !messageQueue.enqueue(message.get())) return ResponseEntity.notFound().build();
         return ResponseEntity.accepted().build();
+    }
+
+    private Optional<CallbackMessage> createMessageFromRequest(PaytrailWebhookPayload payload) {
+        return transactionRepositoryPort.findById(payload.transactionId()).
+                map(transaction -> new CallbackMessage(
+                transaction.idempotencyKey(),
+                transaction.transactionId(),
+                transaction.accountIdFrom(),
+                transaction.accountIdTo(),
+                payload.amountCents(),
+                "OK".equalsIgnoreCase(payload.status())
+                        ? TransactionStatus.PENDING
+                        : TransactionStatus.FAILED
+        ));
     }
 
 

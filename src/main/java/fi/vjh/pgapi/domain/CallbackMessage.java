@@ -1,5 +1,8 @@
 package fi.vjh.pgapi.domain;
 
+import fi.vjh.pgapi.PaymentController;
+import org.jspecify.annotations.NonNull;
+
 import java.util.UUID;
 
 public record CallbackMessage(
@@ -9,4 +12,5 @@ public record CallbackMessage(
         UUID accountIdTo,
         long amountInCents,
         TransactionStatus status
-) {}
+) {
+}
