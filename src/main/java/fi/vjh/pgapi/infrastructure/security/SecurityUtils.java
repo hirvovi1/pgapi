@@ -6,6 +6,8 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 
 public final class SecurityUtils {
+
+    // generic, classic test secret
     public static final String SECRET = "SAIPPUAKAUPPIAS";
 
     private SecurityUtils() {

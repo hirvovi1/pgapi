@@ -1,5 +1,5 @@
 # pgapi
-Core Ledger &amp; Payment Gateway API
+Core Ledger & Payment Gateway API
 
 ```mermaid
 graph TD
@@ -35,5 +35,21 @@ graph TD
     TransferUseCase -->|Trigger Async Event| EventListener
     TransferUseCase -->|Verify External Authorization| MockGateway
 ```
+
+## Docker
+
+Build and run the app with Docker Compose:
+
+```bash
+docker compose up --build
+```
+
+The API will be available on:
+
+```text
+http://localhost:8080
+```
+
+This app uses an embedded H2 database, so no external database container is required for local Docker usage.
 
 ```
