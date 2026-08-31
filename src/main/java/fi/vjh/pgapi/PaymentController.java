@@ -8,11 +8,14 @@ import fi.vjh.pgapi.domain.PaytrailWebhookPayload;
 import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.infrastructure.mock.PaytrailMockProvider;
 import fi.vjh.pgapi.infrastructure.queue.PaymentMessageQueue;
+import fi.vjh.pgapi.infrastructure.security.SecurityUtils;
 import org.jspecify.annotations.NonNull;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
+import tools.jackson.databind.ObjectMapper;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +29,8 @@ public class PaymentController {
     private final PaymentMessageQueue messageQueue;
     private final TransactionRepositoryPort transactionRepositoryPort;
     private PaytrailMockProvider paytrailMockProvider;
+    private final ObjectMapper objectMapper = new ObjectMapper();
+
 
     /**
      * Creates a controller backed by the account service, message queue, and
@@ -109,11 +114,36 @@ public class PaymentController {
     }
 
     @PostMapping("/api/v1/callbacks/paytrail")
-    public ResponseEntity<Void> paytrailCallback(@RequestBody PaytrailWebhookPayload payload) {
-        Optional<CallbackMessage> message = createMessageFromRequest(payload);
+    public ResponseEntity<Void> paytrailCallback(
+            @RequestHeader(value = "X-Paytrail-Signature", required = false) String signature,
+            @RequestBody byte[] rawBody) throws Exception {
 
-        if (message.isEmpty() || !messageQueue.enqueue(message.get())) return ResponseEntity.notFound().build();
+        if (signature == null || signature.isBlank()) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        String bodyText = new String(rawBody, StandardCharsets.UTF_8);
+
+        if (!SecurityUtils.isValidSignature(bodyText, normalizeSHASignature(signature), SecurityUtils.SECRET)) {
+            return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
+        }
+
+        PaytrailWebhookPayload payload = objectMapper.readValue(rawBody, PaytrailWebhookPayload.class);
+
+        Optional<CallbackMessage> message = createMessageFromRequest(payload);
+        if (message.isEmpty() || !messageQueue.enqueue(message.get())) {
+            return ResponseEntity.notFound().build();
+        }
+
         return ResponseEntity.accepted().build();
+    }
+
+    private static @NonNull String normalizeSHASignature(String signature) {
+        String normalizedSignature = signature.trim();
+        if (normalizedSignature.startsWith("sha256=")) {
+            normalizedSignature = normalizedSignature.substring("sha256=".length());
+        }
+        return normalizedSignature;
     }
 
     private Optional<CallbackMessage> createMessageFromRequest(PaytrailWebhookPayload payload) {

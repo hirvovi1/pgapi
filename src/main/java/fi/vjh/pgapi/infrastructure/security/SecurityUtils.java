@@ -3,8 +3,11 @@ package fi.vjh.pgapi.infrastructure.security;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 
 public final class SecurityUtils {
+    public static final String SECRET = "SAIPPUAKAUPPIAS";
+
     private SecurityUtils() {
         throw new NoInstantiation();
     }
@@ -24,6 +27,22 @@ public final class SecurityUtils {
             hexString.append(hex);
         }
         return hexString.toString();
+    }
+
+    public static boolean isValidSignature(String payload, String expectedSig, String secret) {
+        try {
+            String expected = expectedSig.trim();
+            if (expected.startsWith("sha256=")) {
+                expected = expected.substring("sha256=".length());
+            }
+            String actual = calculateHmac(payload, secret);
+            return MessageDigest.isEqual(
+                    actual.getBytes(StandardCharsets.UTF_8),
+                    expected.getBytes(StandardCharsets.UTF_8)
+            );
+        } catch (Exception e) {
+            return false;
+        }
     }
 
     private static class NoInstantiation extends RuntimeException {}
