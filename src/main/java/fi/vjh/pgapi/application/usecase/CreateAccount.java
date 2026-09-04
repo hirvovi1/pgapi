@@ -12,8 +12,8 @@ public class CreateAccount {
         this.accountRepositoryPort = accountRepositoryPort;
     }
 
-    public Account execute(String ownerName, long initialBalanceCents) {
-        Account newAccount = new Account(ownerName, initialBalanceCents);
+    public Account execute(String ownerName, long balanceInCents) {
+        Account newAccount = new Account(ownerName, balanceInCents);
         accountRepositoryPort.save(newAccount);
         return newAccount;
     }

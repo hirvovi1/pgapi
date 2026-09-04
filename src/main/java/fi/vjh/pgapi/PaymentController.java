@@ -28,7 +28,7 @@ public class PaymentController {
     private final CreateAccount createAccount;
     private final PaymentMessageQueue messageQueue;
     private final TransactionRepositoryPort transactionRepositoryPort;
-    private PaytrailMockProvider paytrailMockProvider;
+    private final PaytrailMockProvider paytrailMockProvider;
     private final ObjectMapper objectMapper = new ObjectMapper();
 
 
@@ -58,16 +58,16 @@ public class PaymentController {
     @PostMapping("/accounts")
     @ResponseStatus(HttpStatus.CREATED)
     public Account createAccount(@RequestBody CreateAccountRequest request) {
-        return createAccount.execute(request.ownerName(), request.initialBalanceCents());
+        return createAccount.execute(request.ownerName(), request.balanceInCents());
     }
 
     /**
      * Request body for account creation.
      *
      * @param ownerName account owner's name
-     * @param initialBalanceCents initial balance in cents
+     * @param balanceInCents initial balance in cents
      */
-    public record CreateAccountRequest(String ownerName, long initialBalanceCents) {
+    public record CreateAccountRequest(String ownerName, long balanceInCents) {
     }
 
     public record TransferResponse(
