@@ -36,4 +36,9 @@ public class AccountRepositoryAdapter implements AccountRepositoryPort {
         AccountRow row = new AccountRow(account.getId(), account.getOwnerName(), account.getBalanceInCents());
         accountRepository.save(row);
     }
+
+    @Override
+    public void delete(UUID id) {
+        accountRepository.deleteById(id);
+    }
 }

@@ -53,6 +53,11 @@ public class PaymentController {
         this.paytrailMockProvider = paytrailMockProvider;
     }
 
+    @DeleteMapping("/accounts/{id}")
+    @ResponseStatus(HttpStatus.NO_CONTENT)
+    public void deleteAccount(@PathVariable UUID id) {
+        accountService.delete(id);
+    }
 
     @GetMapping("/accounts")
     public ResponseEntity<List<Account>> getAllAccounts() {

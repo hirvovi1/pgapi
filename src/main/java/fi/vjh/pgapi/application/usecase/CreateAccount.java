@@ -5,6 +5,7 @@ import fi.vjh.pgapi.domain.Account;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.UUID;
 
 @Service
 public class CreateAccount {
@@ -22,5 +23,9 @@ public class CreateAccount {
 
     public List<Account> getAllAccounts() {
         return accountRepositoryPort.findAll();
+    }
+
+    public void delete(UUID id) {
+        accountRepositoryPort.delete(id);
     }
 }
