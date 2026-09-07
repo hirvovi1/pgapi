@@ -10,12 +10,15 @@ import fi.vjh.pgapi.infrastructure.mock.PaytrailMockProvider;
 import fi.vjh.pgapi.infrastructure.queue.PaymentMessageQueue;
 import fi.vjh.pgapi.infrastructure.security.SecurityUtils;
 import org.jspecify.annotations.NonNull;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 import tools.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -25,7 +28,9 @@ import java.util.UUID;
  */
 @RestController
 public class PaymentController {
-    private final CreateAccount createAccount;
+    private static final Logger log = LoggerFactory.getLogger(PaymentController.class);
+
+    private final CreateAccount accountService;
     private final PaymentMessageQueue messageQueue;
     private final TransactionRepositoryPort transactionRepositoryPort;
     private final PaytrailMockProvider paytrailMockProvider;
@@ -36,18 +41,25 @@ public class PaymentController {
      * Creates a controller backed by the account service, message queue, and
      * transaction repository.
      *
-     * @param createAccount account creation use case
+     * @param accountService account creation use case
      * @param messageQueue queue used to process transfers asynchronously
      * @param transactionRepositoryPort port used to persist transactions
      */
-    public PaymentController(CreateAccount createAccount, PaymentMessageQueue messageQueue,
+    public PaymentController(CreateAccount accountService, PaymentMessageQueue messageQueue,
                              TransactionRepositoryPort transactionRepositoryPort, PaytrailMockProvider paytrailMockProvider) {
-        this.createAccount = createAccount;
+        this.accountService = accountService;
         this.messageQueue = messageQueue;
         this.transactionRepositoryPort = transactionRepositoryPort;
         this.paytrailMockProvider = paytrailMockProvider;
     }
 
+
+    @GetMapping("/accounts")
+    public ResponseEntity<List<Account>> getAllAccounts() {
+        List<Account> accounts = accountService.getAllAccounts();
+        log.info("Listed {} accounts", accounts.size());
+        return ResponseEntity.ok(accounts);
+    }
 
     /**
      * Creates an account with the requested owner and initial balance.
@@ -58,7 +70,10 @@ public class PaymentController {
     @PostMapping("/accounts")
     @ResponseStatus(HttpStatus.CREATED)
     public Account createAccount(@RequestBody CreateAccountRequest request) {
-        return createAccount.execute(request.ownerName(), request.balanceInCents());
+        Account account = accountService.create(request.ownerName(), request.balanceInCents());
+        log.info("Created account {} with initial balance of {} cents",
+                account.getId(), request.balanceInCents());
+        return account;
     }
 
     /**
@@ -81,8 +96,12 @@ public class PaymentController {
     public ResponseEntity<?> transfer(@RequestBody TransferRequest request) {
 
         UUID transactionId = UUID.randomUUID();
+        log.info("Received transfer request {} from account {} to account {} for {} cents",
+                transactionId, request.accountIdFrom(), request.accountIdTo(), request.amountInCents());
 
         if (transactionRepositoryPort.existsByIdempotencyKey(request.idempotencyKey())) {
+            log.warn("Rejected duplicate transfer request {} using idempotency key {}",
+                    transactionId, request.idempotencyKey());
             return ResponseEntity.status(HttpStatus.CONFLICT)
                     .body("Idempotency key already used. Request ignored.");
         }
@@ -99,6 +118,7 @@ public class PaymentController {
                 redirectUrl
         );
 
+        log.info("Accepted transfer {} and initiated payment", transactionId);
         return ResponseEntity.status(HttpStatus.ACCEPTED).body(response);
     }
 
@@ -119,22 +139,30 @@ public class PaymentController {
             @RequestBody byte[] rawBody) throws Exception {
 
         if (signature == null || signature.isBlank()) {
+            log.warn("Rejected Paytrail callback without a signature (body length: {} bytes)", rawBody.length);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         String bodyText = new String(rawBody, StandardCharsets.UTF_8);
 
         if (!SecurityUtils.isValidSignature(bodyText, normalizeSHASignature(signature), SecurityUtils.SECRET)) {
+            log.warn("Rejected Paytrail callback with an invalid signature (body length: {} bytes)",
+                    rawBody.length);
             return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
         }
 
         PaytrailWebhookPayload payload = objectMapper.readValue(rawBody, PaytrailWebhookPayload.class);
+        log.info("Received valid Paytrail callback for transaction {} with status {}",
+                payload.transactionId(), payload.status());
 
         Optional<CallbackMessage> message = createMessageFromRequest(payload);
         if (message.isEmpty() || !messageQueue.enqueue(message.get())) {
+            log.warn("Ignored Paytrail callback for unknown or already queued transaction {}",
+                    payload.transactionId());
             return ResponseEntity.notFound().build();
         }
 
+        log.info("Accepted Paytrail callback for transaction {}", payload.transactionId());
         return ResponseEntity.accepted().build();
     }
 
@@ -179,13 +207,19 @@ public class PaymentController {
     @GetMapping("/{id}/status")
     public ResponseEntity<?> getTransactionStatus(@PathVariable UUID id) {
         return transactionRepositoryPort.findStatusById(id)
-                .map(status -> ResponseEntity.ok(Map.of(
-                        "transactionId", id,
-                        "status", status
-                )))
-                .orElseGet(() -> ResponseEntity.status(404).body(Map.of(
-                        "error", "Transaction not found",
-                        "transactionId", id
-                )));
+                .map(status -> {
+                    log.info("Returned status {} for transaction {}", status, id);
+                    return ResponseEntity.ok(Map.of(
+                            "transactionId", id,
+                            "status", status
+                    ));
+                })
+                .orElseGet(() -> {
+                    log.warn("Transaction {} was not found", id);
+                    return ResponseEntity.status(404).body(Map.of(
+                            "error", "Transaction not found",
+                            "transactionId", id
+                    ));
+                });
     }
 }

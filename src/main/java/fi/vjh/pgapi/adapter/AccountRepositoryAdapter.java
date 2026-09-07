@@ -5,6 +5,7 @@ import fi.vjh.pgapi.domain.Account;
 import fi.vjh.pgapi.entity.AccountRow;
 import fi.vjh.pgapi.infrastructure.jpa.AccountRepository;
 import org.springframework.stereotype.Component;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -21,6 +22,13 @@ public class AccountRepositoryAdapter implements AccountRepositoryPort {
     public Optional<Account> findById(UUID id) {
         return accountRepository.findById(id)
                 .map(row -> new Account(row.getId(), row.getOwnerName(), row.getBalanceInCents()));
+    }
+
+    @Override
+    public List<Account> findAll() {
+        return accountRepository.findAll().stream()
+                .map(row -> new Account(row.getId(), row.getOwnerName(), row.getBalanceInCents()))
+                .toList();
     }
 
     @Override

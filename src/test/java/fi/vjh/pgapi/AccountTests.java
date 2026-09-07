@@ -29,7 +29,7 @@ class AccountTests {
     @Test
     void createAccountReturnsAndPersistsAccount() {
         // Given & Act - Execute the use case to create an account with cents (12.50 EUR)
-        Account account = createAccount.execute("Alice", 1_250);
+        Account account = createAccount.create("Alice", 1_250);
 
         // Then - Validate the domain object returned from the use case
         assertThat(account.getId()).isNotNull();
@@ -45,8 +45,8 @@ class AccountTests {
     @Test
     void createAccountGeneratesDifferentIds() {
         // Given & Act - Create multiple accounts
-        Account firstAccount = createAccount.execute("Alice", 100);
-        Account secondAccount = createAccount.execute("Bob", 200);
+        Account firstAccount = createAccount.create("Alice", 100);
+        Account secondAccount = createAccount.create("Bob", 200);
 
         // Then - Verify unique identity generation and correct record count
         assertThat(firstAccount.getId()).isNotEqualTo(secondAccount.getId());
