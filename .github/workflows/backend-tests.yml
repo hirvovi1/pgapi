@@ -1,0 +1,28 @@
+name: Java Backend Unit & Integration Tests
+
+on:
+  push:
+    branches: [ main, master, dev ]
+  pull_request:
+    branches: [ main, master, dev ]
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+
+    steps:
+      # 1. Haetaan backend-koodi
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      # 2. Asennetaan Java ja otetaan Maven-riippuvuuksien välimuisti (cache) käyttöön
+      - name: Set up JDK 25
+        uses: actions/setup-java@v4
+        with:
+          java-version: '25'
+          distribution: 'oracle'
+          cache: 'maven'
+
+      # 3. Ajetaan testit
+      - name: Run Tests with Maven
+        run: ./mvnw test

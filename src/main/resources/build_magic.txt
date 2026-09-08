@@ -1,1 +1,2 @@
 ./mvnw clean package spring-boot:build-image -DskipTests
+gh act -j test # testaa github flow lokaalisti

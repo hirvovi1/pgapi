@@ -4,6 +4,7 @@ import fi.vjh.pgapi.infrastructure.security.SecurityUtils;
 import org.springframework.http.HttpEntity;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestTemplate;
 import tools.jackson.databind.ObjectMapper;
@@ -20,9 +21,14 @@ public class PaytrailMockProvider {
 
     private final ScheduledExecutorService scheduler = Executors.newScheduledThreadPool(1);
     private final RestTemplate restTemplate = new RestTemplate();
+    private final Environment environment;
 
     private static final String SECRET_KEY = "SAIPPUAKAUPPIAS";
-    private static final String CALLBACK_URL = "http://localhost:8080/api/v1/callbacks/paytrail";
+    private static final String CALLBACK_PATH = "/api/v1/callbacks/paytrail";
+
+    public PaytrailMockProvider(Environment environment) {
+        this.environment = environment;
+    }
 
     public String initiatePayment(UUID transactionId, long amountCents) {
         // 1. Simuloidaan maksusivun URL-osoitetta
@@ -50,11 +56,19 @@ public class PaytrailMockProvider {
             headers.set("Idempotency-Key", transactionId.toString());
 
             HttpEntity<String> entity = new HttpEntity<>(jsonBody, headers);
-            restTemplate.postForEntity(CALLBACK_URL, entity, String.class);
+            restTemplate.postForEntity(callbackUrl(), entity, String.class);
 
         } catch (Exception e) {
             e.printStackTrace();
         }
+    }
+
+    private String callbackUrl() {
+        String port = environment.getProperty(
+                "local.server.port",
+                environment.getProperty("server.port", "8080")
+        );
+        return "http://localhost:" + port + CALLBACK_PATH;
     }
 
 }
