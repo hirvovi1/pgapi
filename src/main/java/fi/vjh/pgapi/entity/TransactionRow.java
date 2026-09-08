@@ -24,17 +24,20 @@ public class TransactionRow {
 
     @Enumerated(EnumType.STRING)
     private TransactionStatus status;
+    private String statusMessage;
 
     // Hibernate vaatii tyhjän konstruktorin
     public TransactionRow() {}
 
-    public TransactionRow(UUID id, UUID idempotencyKey, UUID accountIdFrom, UUID accountIdTo, long amountInCents, TransactionStatus status) {
+    public TransactionRow(UUID id, UUID idempotencyKey, UUID accountIdFrom,
+                          UUID accountIdTo, long amountInCents, TransactionStatus status, String statusMessage) {
         this.id = id;
         this.idempotencyKey = idempotencyKey;
         this.accountIdFrom = accountIdFrom;
         this.accountIdTo = accountIdTo;
         this.amountInCents = amountInCents;
         this.status = status;
+        this.statusMessage = statusMessage;
     }
 
 }

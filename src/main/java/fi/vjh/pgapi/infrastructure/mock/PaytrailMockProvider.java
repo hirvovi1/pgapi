@@ -32,7 +32,9 @@ public class PaytrailMockProvider {
 
     public String initiatePayment(UUID transactionId, long amountCents) {
         // 1. Simuloidaan maksusivun URL-osoitetta
-        String mockCheckoutUrl = "https://paytrail.mock" + UUID.randomUUID();
+        String mockCheckoutUrl =
+                "http://localhost:5173/mock-payment/%s?amountCents=%d"
+                        .formatted(transactionId, amountCents);
 
         // 2. Ajastetaan asynkroninen callback (simuloi asiakkaan maksutapahtumaa)
         scheduler.schedule(() -> triggerWebhook(transactionId, amountCents), 3, TimeUnit.SECONDS);

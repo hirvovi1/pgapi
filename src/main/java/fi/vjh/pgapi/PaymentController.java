@@ -141,7 +141,7 @@ public class PaymentController {
     @PostMapping("/api/v1/callbacks/paytrail")
     public ResponseEntity<Void> paytrailCallback(
             @RequestHeader(value = "X-Paytrail-Signature", required = false) String signature,
-            @RequestBody byte[] rawBody) throws Exception {
+            @RequestBody byte[] rawBody) {
 
         if (signature == null || signature.isBlank()) {
             log.warn("Rejected Paytrail callback without a signature (body length: {} bytes)", rawBody.length);
@@ -207,24 +207,30 @@ public class PaymentController {
             UUID accountIdFrom,
             UUID accountIdTo,
             long amountInCents
-    ) {}
+    ) {    }
 
     @GetMapping("/{id}/status")
-    public ResponseEntity<?> getTransactionStatus(@PathVariable UUID id) {
+    public ResponseEntity<TransactionStatusResponse> getTransactionStatus(@PathVariable UUID id) {
         return transactionRepositoryPort.findStatusById(id)
-                .map(status -> {
-                    log.info("Returned status {} for transaction {}", status, id);
-                    return ResponseEntity.ok(Map.of(
-                            "transactionId", id,
-                            "status", status
+                .map(statusInfo -> {
+                    log.info("Returned status {} for transaction {}", statusInfo.status(), id);
+                    return ResponseEntity.ok(new TransactionStatusResponse(
+                            id, statusInfo.status(), statusInfo.message()
                     ));
                 })
                 .orElseGet(() -> {
                     log.warn("Transaction {} was not found", id);
-                    return ResponseEntity.status(404).body(Map.of(
-                            "error", "Transaction not found",
-                            "transactionId", id
-                    ));
+                    return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                            .body(new TransactionStatusResponse(
+                                    id, TransactionStatus.FAILED,  "Transaction not found"
+                            ));
                 });
     }
+
+    public record TransactionStatusResponse(
+            UUID transactionId ,
+            TransactionStatus status ,
+            String message) {}
+
+
 }

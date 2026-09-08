@@ -51,7 +51,10 @@ class TransferMoneyIntegrationTest {
         PaymentController.TransferResponse responseBody =
                 (PaymentController.TransferResponse) response.getBody();
         assertThat(responseBody).isNotNull();
-        assertThat(responseBody.paymentUrl()).startsWith("https://paytrail.mock");
+        assertThat(responseBody.paymentUrl())
+                .isEqualTo("http://localhost:5173/mock-payment/"
+                        + responseBody.transactionId()
+                        + "?amountCents=4000");
 
         // Assert - Use Awaitility to poll H2 database until background Worker completes the transfer
         await().atMost(Duration.ofSeconds(6))

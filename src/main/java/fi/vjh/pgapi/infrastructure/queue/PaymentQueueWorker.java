@@ -54,12 +54,12 @@ public class PaymentQueueWorker {
                     );
 
                     // Päivitetään olemassa olevan transaktion tila SUCCESS-muotoon kannassa portin kautta
-                    transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.SUCCESS);
+                    transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.SUCCESS, "");
                     log.info("Transaktio {} merkitty onnistuneeksi kannassa.", currentMessage.transactionId());
 
                 } else {
                     log.warn("Maksun callback ilmoitti virheestä transaktiolle {}. Perutaan varaus.", currentMessage.transactionId());
-                    transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED);
+                    transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, "");
                 }
 
             } catch (InterruptedException e) {
@@ -71,7 +71,8 @@ public class PaymentQueueWorker {
 
                 if (currentMessage != null) {
                     log.warn("Päivitetään transaktion {} tilaksi FAILED virheen vuoksi.", currentMessage.transactionId());
-                    transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED);
+                    transactionRepositoryPort.updateStatus(
+                            currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
                 }
             }
         }

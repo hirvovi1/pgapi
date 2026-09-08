@@ -10,7 +10,6 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 
-import java.util.Map;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -39,7 +38,8 @@ class TransactionStatusControllerTest {
                 UUID.randomUUID(),
                 UUID.randomUUID(),
                 1_000,
-                TransactionStatus.SUCCESS
+                TransactionStatus.SUCCESS,
+                ""
         );
 
         transactionRepository.save(row);
@@ -49,10 +49,11 @@ class TransactionStatusControllerTest {
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.OK);
-        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        PaymentController.TransactionStatusResponse body =
+                (PaymentController.TransactionStatusResponse) response.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.get("transactionId")).isEqualTo(txId);
-        assertThat(body.get("status")).isEqualTo(TransactionStatus.SUCCESS);
+        assertThat(body.transactionId()).isEqualTo(txId);
+        assertThat(body.status()).isEqualTo(TransactionStatus.SUCCESS);
     }
 
     @Test
@@ -61,12 +62,12 @@ class TransactionStatusControllerTest {
         UUID nonExistentId = UUID.randomUUID();
 
         // Act
-        ResponseEntity<?> response = paymentController.getTransactionStatus(nonExistentId);
+        ResponseEntity<PaymentController.TransactionStatusResponse> response = paymentController.getTransactionStatus(nonExistentId);
 
         // Then
         assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
-        Map<?, ?> body = (Map<?, ?>) response.getBody();
+        PaymentController.TransactionStatusResponse body =response.getBody();
         assertThat(body).isNotNull();
-        assertThat(body.get("error")).isEqualTo("Transaction not found");
+        assertThat(body.message()).isEqualTo("Transaction not found");
     }
 }

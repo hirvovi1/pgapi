@@ -27,22 +27,25 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
                 message.accountIdFrom(),
                 message.accountIdTo(),
                 message.amountInCents(),
-                TransactionStatus.PENDING
+                TransactionStatus.PENDING,
+                ""
         );
         transactionRepository.save(row);
     }
 
     @Override
-    public void updateStatus(UUID id, TransactionStatus status) {
+    public void updateStatus(UUID id, TransactionStatus status, String message) {
         transactionRepository.findById(id).ifPresent(row -> {
             row.setStatus(status);
+            row.setStatusMessage(message);
             transactionRepository.save(row);
         });
     }
 
     @Override
-    public Optional<TransactionStatus> findStatusById(UUID id) {
-        return transactionRepository.findById(id).map(TransactionRow::getStatus);
+    public Optional<TransactionStatusInfo> findStatusById(UUID id) {
+        return transactionRepository.findById(id)
+                .map(row -> new TransactionStatusInfo(row.getStatus(), row.getStatusMessage()));
     }
 
     @Override
