@@ -53,6 +53,11 @@ public class PaymentController {
         this.paytrailMockProvider = paytrailMockProvider;
     }
 
+    @GetMapping("/db/health")
+    public ResponseEntity<Boolean> pingDatabase() {
+        return ResponseEntity.ok(transactionRepositoryPort.ping());
+    }
+
     @DeleteMapping("/accounts/{id}")
     @ResponseStatus(HttpStatus.NO_CONTENT)
     public void deleteAccount(@PathVariable UUID id) {

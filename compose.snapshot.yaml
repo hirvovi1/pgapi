@@ -1,6 +1,6 @@
 services:
   pgapi:
-    image: pgapi:0.0.3
+    image: pgapi:0.0.4
     container_name: pgapi
     ports:
       - "8080:8080"
