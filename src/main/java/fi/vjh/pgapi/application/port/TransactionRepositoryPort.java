@@ -13,6 +13,8 @@ public interface TransactionRepositoryPort {
     Optional<CallbackMessage> findById(UUID id);
     boolean existsByIdempotencyKey(UUID idempotencyKey);
 
+    boolean ping();
+
     record TransactionStatusInfo(TransactionStatus status, String message) {
     }
 }
