@@ -11,6 +11,7 @@ public record CallbackMessage(
         UUID accountIdFrom,
         UUID accountIdTo,
         long amountInCents,
-        TransactionStatus status
+        TransactionStatus status,
+        Long orderId
 ) {
 }

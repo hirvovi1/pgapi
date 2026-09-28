@@ -8,6 +8,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpStatus;
+import org.springframework.test.context.ActiveProfiles;
 import org.springframework.http.ResponseEntity;
 
 import java.util.UUID;
@@ -15,6 +16,7 @@ import java.util.UUID;
 import static org.assertj.core.api.Assertions.assertThat;
 
 @SpringBootTest
+@ActiveProfiles("test")
 class TransactionStatusControllerTest {
 
     @Autowired
@@ -30,7 +32,7 @@ class TransactionStatusControllerTest {
 
     @Test
     void shouldReturnHttpStatus200AndCorrectStatusWhenTransactionExists() {
-        // Given
+
         UUID txId = UUID.randomUUID();
         TransactionRow row = new TransactionRow(
                 txId,
@@ -39,7 +41,8 @@ class TransactionStatusControllerTest {
                 UUID.randomUUID(),
                 1_000,
                 TransactionStatus.SUCCESS,
-                ""
+                "",
+                null
         );
 
         transactionRepository.save(row);
