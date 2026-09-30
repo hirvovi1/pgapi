@@ -6,6 +6,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.util.Set;
+import java.util.Stack;
 import java.util.UUID;
 import java.util.concurrent.BlockingQueue;
 import java.util.concurrent.ConcurrentHashMap;
@@ -19,6 +20,7 @@ public class PaymentMessageQueue {
 
     private final Set<UUID> processedKeys = ConcurrentHashMap.newKeySet();
 
+    private Stack<CallbackMessage> failedMessages = new Stack<>();
 
     public boolean enqueue(CallbackMessage message) {
 
@@ -33,6 +35,16 @@ public class PaymentMessageQueue {
         }
         return added;
     }
+
+    void requeue(CallbackMessage message) {
+        log.info("Requeuing message for transaction {} due to technical failure...", message.transactionId());
+        boolean added = queue.offer(message);
+        if (!added) {
+            log.error("FATAL: Failed to requeue message for transaction {}. Queue might be full!", message.transactionId());
+            failedMessages.push(message);
+        }
+    }
+
 
     public CallbackMessage take() throws InterruptedException {
         return queue.take();

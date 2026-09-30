@@ -4,6 +4,7 @@ import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.TransferMoney;
 import fi.vjh.pgapi.domain.CallbackMessage;
 import fi.vjh.pgapi.domain.TransactionStatus;
+import fi.vjh.pgapi.domain.UnsuccessfulPayment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
@@ -15,6 +16,7 @@ import org.springframework.web.client.RestClient;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -55,7 +57,7 @@ class PaymentChainTest {
     }
 
     @Test
-    void testSuccessfulPaymentChain() {
+    void testSuccessfulPaymentChain() throws UnsuccessfulPayment {
         CallbackMessage message = new CallbackMessage(
                 idempotencyKey, transactionId, accountIdFrom, accountIdTo, amountInCents, TransactionStatus.PENDING, orderId
         );
@@ -87,12 +89,12 @@ class PaymentChainTest {
 
 
     @Test
-    void testPaymentChainFailsWhenTransactionNotPending() {
+    void testPaymentChainFailsWhenTransactionNotPending() throws UnsuccessfulPayment {
         CallbackMessage message = new CallbackMessage(
                 idempotencyKey, transactionId, accountIdFrom, accountIdTo, amountInCents, TransactionStatus.FAILED, orderId
         );
 
-        worker.process(message);
+        assertThrows(UnsuccessfulPayment.class, () -> worker.process(message));
 
         verify(transactionRepositoryPort).updateStatus(eq(transactionId), eq(TransactionStatus.FAILED), contains("is not pending"));
         verifyNoInteractions(transferMoney);
@@ -101,7 +103,7 @@ class PaymentChainTest {
     }
 
     @Test
-    void testPaymentChainFailsWhenTransferFails() {
+    void testPaymentChainFailsWhenTransferFails() throws UnsuccessfulPayment {
         CallbackMessage message = new CallbackMessage(
                 idempotencyKey, transactionId, accountIdFrom, accountIdTo, amountInCents, TransactionStatus.PENDING, orderId
         );
@@ -109,7 +111,7 @@ class PaymentChainTest {
         doThrow(new IllegalArgumentException("Insufficient funds"))
                 .when(transferMoney).execute(accountIdFrom, accountIdTo, amountInCents);
 
-        worker.process(message);
+        assertThrows(UnsuccessfulPayment.class, () -> worker.process(message));
 
         ArgumentCaptor<String> messageCaptor = ArgumentCaptor.forClass(String.class);
         verify(transactionRepositoryPort).updateStatus(eq(transactionId), eq(TransactionStatus.FAILED), messageCaptor.capture());

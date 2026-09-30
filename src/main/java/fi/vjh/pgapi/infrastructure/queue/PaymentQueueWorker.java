@@ -59,15 +59,24 @@ public class PaymentQueueWorker {
                 Thread.currentThread().interrupt();
                 log.info("Worker thread interrupted.");
                 break;
+            } catch (UnsuccessfulPayment e) {
+                log.error("Payment transaction {} failed definitively: {}", currentMessage.transactionId(), e.getMessage());
             } catch (Exception e) {
-                handleError(e, currentMessage);
+                log.error("Technical error processing transaction {}. Requeuing for retry.",
+                        currentMessage != null ? currentMessage.transactionId() : "unknown", e);
+
+                if (currentMessage != null) {
+                    messageQueue.requeue(currentMessage);
+                    try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+                }
             }
         }
     }
 
-    void process(CallbackMessage currentMessage) {
+    void process(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         log.info("Message picked from queue. Starting transaction {} processing...", currentMessage.transactionId());
         log.debug("current message: {}", currentMessage);
+
         try {
             checkPaymentStatus(currentMessage);
             executeTransfer(currentMessage);
@@ -75,10 +84,18 @@ public class PaymentQueueWorker {
             Order order = markOrderCompleted(currentMessage);
             emptyCart(order.cartId());
         } catch (UnsuccessfulPayment e) {
-            log.error("Payment transaction {} failed: {}", currentMessage.transactionId(), e.getMessage());
             transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
+            throw e;
         }
     }
+
+
+
+
+
+
+
+
 
     private void checkPaymentStatus(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         if (PENDING.equals(currentMessage.status())) {
@@ -92,28 +109,32 @@ public class PaymentQueueWorker {
         log.info("Money transfer started for tx: {}", currentMessage.transactionId());
 
         try {
-            transferMoney.execute(
-                    currentMessage.accountIdFrom(),
-                    currentMessage.accountIdTo(),
-                    currentMessage.amountInCents()
-            );
+            if (!isUsed(currentMessage.idempotencyKey())) {
+                transferMoney.execute(
+                        currentMessage.accountIdFrom(),
+                        currentMessage.accountIdTo(),
+                        currentMessage.amountInCents()
+                );
+            } else {
+                log.info("duplicate money transfer {} detected. skipping.", currentMessage.transactionId());
+            }
         } catch (Exception e) {
             throw new UnsuccessfulPayment("Transaction " + currentMessage.transactionId() + " failed: " + e.getMessage(), e);
         }
     }
 
-    private void markTransactionAsSuccess(CallbackMessage currentMessage) throws UnsuccessfulPayment {
+    private boolean isUsed(UUID idempotencyKey) {
+        return transactionRepositoryPort.existsByIdempotencyKey(idempotencyKey);
+    }
+
+    private void markTransactionAsSuccess(CallbackMessage currentMessage) {
         log.info("Transaction {} is being marked as successful...", currentMessage.transactionId());
         UUID transactionId = currentMessage.transactionId();
-        try {
-            transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "");
-        } catch (Exception e) {
-            throw new UnsuccessfulPayment("updating transaction state failed", e);
-        }
+        transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "");
         log.info("Transaction {} marked as successful in database.", transactionId);
     }
 
-    private @NonNull Order markOrderCompleted(CallbackMessage currentMessage) throws UnsuccessfulPayment {
+    private @NonNull Order markOrderCompleted(CallbackMessage currentMessage) {
         Long orderId = currentMessage.orderId();
         log.info("Marking order with id {} as paid", orderId);
 
@@ -122,7 +143,7 @@ public class PaymentQueueWorker {
         return order;
     }
 
-    protected void finishOrder(Order o) throws UnsuccessfulPayment {
+    protected void finishOrder(Order o) {
         Long orderId = Objects.requireNonNull(o.id());
 
         RestClient.ResponseSpec result = restClient.put()
@@ -131,7 +152,7 @@ public class PaymentQueueWorker {
 
         if (result.toBodilessEntity().getStatusCode().isError()) {
             log.warn("Order update failed with id {}", orderId);
-            throw new UnsuccessfulPayment("order " + orderId + " payment failed");
+            throw new RuntimeException("order " + orderId + " payment failed");
         } else {
             log.info("Order with id {} was updated successfully as paid", orderId);
         }
