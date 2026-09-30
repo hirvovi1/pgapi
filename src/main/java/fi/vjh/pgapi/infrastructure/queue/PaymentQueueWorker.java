@@ -1,10 +1,10 @@
 package fi.vjh.pgapi.infrastructure.queue;
 
-import fi.vjh.pgapi.application.port.TransactionRepositoryPort; // Tuodaan uusi portti mukaan
+import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.TransferMoney;
 import fi.vjh.pgapi.domain.CallbackMessage;
 import fi.vjh.pgapi.domain.Order;
-import fi.vjh.pgapi.domain.TransactionStatus; // Tuodaan enumi
+import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.domain.UnsuccessfulPayment;
 import jakarta.annotation.PostConstruct;
 import jakarta.annotation.PreDestroy;
@@ -14,7 +14,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
-import java.net.http.HttpResponse;
 import java.util.Objects;
 import java.util.UUID;
 
@@ -23,30 +22,30 @@ import static fi.vjh.pgapi.domain.TransactionStatus.PENDING;
 @Component
 public class PaymentQueueWorker {
 
-
     private static final Logger log = LoggerFactory.getLogger(PaymentQueueWorker.class);
 
     private final PaymentMessageQueue messageQueue;
     private final TransferMoney transferMoney;
     private final TransactionRepositoryPort transactionRepositoryPort;
+    private final RestClient restClient;
     private Thread workerThread;
     private volatile boolean running = true;
 
-    public PaymentQueueWorker(PaymentMessageQueue messageQueue, TransferMoney transferMoney, TransactionRepositoryPort transactionRepositoryPort) {
+    public PaymentQueueWorker(PaymentMessageQueue messageQueue,
+                              TransferMoney transferMoney,
+                              TransactionRepositoryPort transactionRepositoryPort,
+                              RestClient restClient) {
         this.messageQueue = messageQueue;
         this.transferMoney = transferMoney;
         this.transactionRepositoryPort = transactionRepositoryPort;
-    }
-
-    String baseUrl() {
-        return "http://pg-api-facade:8091/api/v1/frontend/";
+        this.restClient = restClient;
     }
 
     @PostConstruct
     public void start() {
         this.workerThread = new Thread(this::processQueue, "payment-worker-thread");
         this.workerThread.start();
-        log.info(" Worker Thread started");
+        log.info("Worker Thread started");
     }
 
     private void processQueue() {
@@ -66,27 +65,31 @@ public class PaymentQueueWorker {
         }
     }
 
-    private void process(CallbackMessage currentMessage) {
+    void process(CallbackMessage currentMessage) {
         log.info("Message picked from queue. Starting transaction {} processing...", currentMessage.transactionId());
-        log.info("current msg {}", currentMessage);
-        if (PENDING.equals(currentMessage.status())) {
-            try {
-                executeTranfer(currentMessage);
-                markTransactionAsSuccess(currentMessage);
-                Order order = markOrderCompleted(currentMessage);
-                emptyCart(order.cartId());
-            } catch (UnsuccessfulPayment e) {
-                log.error("Payment transaction {} failed: {}", currentMessage.transactionId(), e.getMessage());
-                transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
-            }
-        } else {
-            log.warn("Payment status was incorrect. Transaction {} Cancel reservation.", currentMessage.transactionId());
-            transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, "");
+        log.debug("current message: {}", currentMessage);
+        try {
+            checkPaymentStatus(currentMessage);
+            executeTransfer(currentMessage);
+            markTransactionAsSuccess(currentMessage);
+            Order order = markOrderCompleted(currentMessage);
+            emptyCart(order.cartId());
+        } catch (UnsuccessfulPayment e) {
+            log.error("Payment transaction {} failed: {}", currentMessage.transactionId(), e.getMessage());
+            transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
         }
     }
 
-    private void executeTranfer(CallbackMessage currentMessage) throws UnsuccessfulPayment {
-        log.info("Transaction {} is being processed...", currentMessage.transactionId());
+    private void checkPaymentStatus(CallbackMessage currentMessage) throws UnsuccessfulPayment {
+        if (PENDING.equals(currentMessage.status())) {
+            log.debug("Transaction {} is pending. Proceeding with transfer.", currentMessage.transactionId());
+        } else {
+            throw new UnsuccessfulPayment("Transaction " + currentMessage.transactionId() + " is not pending. Current status: " + currentMessage.status());
+        }
+    }
+
+    private void executeTransfer(CallbackMessage currentMessage) throws UnsuccessfulPayment {
+        log.info("Money transfer started for tx: {}", currentMessage.transactionId());
 
         try {
             transferMoney.execute(
@@ -102,7 +105,6 @@ public class PaymentQueueWorker {
     private void markTransactionAsSuccess(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         log.info("Transaction {} is being marked as successful...", currentMessage.transactionId());
         UUID transactionId = currentMessage.transactionId();
-
         try {
             transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "");
         } catch (Exception e) {
@@ -112,40 +114,53 @@ public class PaymentQueueWorker {
     }
 
     private @NonNull Order markOrderCompleted(CallbackMessage currentMessage) throws UnsuccessfulPayment {
-        log.info("marking order {} as completed", currentMessage.orderId());
-        Order order = Objects.requireNonNull(fetchOrder(currentMessage.orderId()));
+        Long orderId = currentMessage.orderId();
+        log.info("Marking order with id {} as paid", orderId);
+
+        Order order = Objects.requireNonNull(fetchOrder(orderId));
         finishOrder(order);
         return order;
     }
 
     protected void finishOrder(Order o) throws UnsuccessfulPayment {
-        log.info("Marking order with id {} as paid from service {}", o.id(), baseUrl() + "orders/" + o.id() + "/pay");
-        RestClient.ResponseSpec result = RestClient.create().put()
-                .uri(baseUrl() + "orders/" + Objects.requireNonNull(o.id()) + "/pay")
+        Long orderId = Objects.requireNonNull(o.id());
+
+        RestClient.ResponseSpec result = restClient.put()
+                .uri("/orders/{id}/pay", orderId)
                 .retrieve();
 
-        log.info("order service response was http {}", result.toBodilessEntity().getStatusCode().value());
-
         if (result.toBodilessEntity().getStatusCode().isError()) {
-            log.warn("Order update failed with id {} from service {}. Service returned: {}", o.id(), baseUrl() + "orders/" + o.id() + "/pay", result);
-            throw new UnsuccessfulPayment("order " + o.id() + " payment failed");
+            log.warn("Order update failed with id {}", orderId);
+            throw new UnsuccessfulPayment("order " + orderId + " payment failed");
         } else {
-            log.info("Order with id {} paid successfully from service {}", o.id(), baseUrl() + "orders/" + o.id() + "/pay");
+            log.info("Order with id {} was updated successfully as paid", orderId);
         }
     }
 
     protected void emptyCart(Long cartId) {
-        log.info("Emptying cart with id {} from service {}", cartId, baseUrl() + "cart/" + cartId + "/pay");
+        log.info("Emptying cart with id {}", cartId);
 
-        String result = RestClient.create().put()
-                .uri(baseUrl() + "cart/" + cartId + "/pay")
-                .retrieve()
-                .body(String.class);
-        if (result == null || !result.equals("OK")) {
-            log.warn("Cart emptying failed with id {} from service {}. Service returned: {}", cartId, baseUrl() + "cart/" + cartId + "/pay", result);
+        RestClient.ResponseSpec response = restClient.put()
+                .uri("/cart/{id}/pay", cartId)
+                .retrieve();
+
+        if (response.toBodilessEntity().getStatusCode().isError()) {
+            log.warn("Cart emptying failed with id {}", cartId);
         } else {
-            log.info("Cart with id {} emptied successfully from service {}", cartId, baseUrl() + "cart/" + cartId + "/pay");
+            log.info("Cart with id {} emptied successfully", cartId);
         }
+    }
+
+    protected Order fetchOrder(Long orderId) {
+        log.debug("Fetching order with orderId {}", orderId);
+
+        Order order = restClient.get()
+                .uri("/orders/{id}", orderId) // Siisti polkuparametri
+                .retrieve()
+                .body(Order.class);
+
+        log.debug("Order fetched {}", orderId);
+        return order;
     }
 
     private void handleError(Exception e, CallbackMessage currentMessage) {
@@ -156,16 +171,6 @@ public class PaymentQueueWorker {
             transactionRepositoryPort.updateStatus(
                     currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
         }
-    }
-
-    protected Order fetchOrder(Long orderId) {
-        log.info("Fetching order with orderId {} from service {}", orderId, baseUrl() + "orders/" + orderId);
-        Order order = RestClient.create().get()
-                .uri(baseUrl() + "orders/" + orderId)
-                .retrieve()
-                .body(Order.class);
-        log.info("Order fetched {} from service {}", orderId, baseUrl() + "orders/" + orderId);
-        return order;
     }
 
     @PreDestroy
