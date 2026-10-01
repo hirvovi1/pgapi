@@ -21,6 +21,7 @@ import org.springframework.web.client.RestClient;
 import java.util.UUID;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.method;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
@@ -81,6 +82,7 @@ class PaymentIdempotencyIntegrationTest {
 
         secondTrySucceeds(base, message);
 
+        assertTrue(messageQueue.retryStackIsEmpty());
         mockServer.verify();
     }
 

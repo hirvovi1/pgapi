@@ -53,6 +53,7 @@ public class PaymentQueueWorker {
 
         while (running) {
             try {
+                waitASecUnlessInterrupted();
                 currentMessage = messageQueue.take();
                 process(currentMessage);
             } catch (InterruptedException e) {
@@ -62,15 +63,22 @@ public class PaymentQueueWorker {
             } catch (UnsuccessfulPayment e) {
                 log.error("Payment transaction {} failed definitively: {}", currentMessage.transactionId(), e.getMessage());
             } catch (Exception e) {
-                log.error("Technical error processing transaction {}. Requeuing for retry.",
-                        currentMessage != null ? currentMessage.transactionId() : "unknown", e);
-
-                if (currentMessage != null) {
-                    messageQueue.requeue(currentMessage);
-                    try { Thread.sleep(1000); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
-                }
+                retryMessage(e, currentMessage);
             }
         }
+    }
+
+    private void retryMessage(Exception e, CallbackMessage currentMessage) {
+        if (currentMessage != null) {
+            log.error("Technical error processing transaction {}. Requeuing for retry.", currentMessage.transactionId(), e);
+            messageQueue.requeue(currentMessage);
+        } else {
+            log.error("Technical error", e);
+        }
+    }
+
+    private static void waitASecUnlessInterrupted() throws InterruptedException {
+        Thread.sleep(1000);
     }
 
     void process(CallbackMessage currentMessage) throws UnsuccessfulPayment {
@@ -80,20 +88,33 @@ public class PaymentQueueWorker {
         try {
             checkPaymentStatus(currentMessage);
             executeTransfer(currentMessage);
-            Order order = markOrderCompleted(currentMessage);
+            Order order = fetchOrder(currentMessage);
+            finishOrder(order);
             markTransactionAsSuccess(currentMessage);
-            emptyCart(order.cartId());
+            cleanUp(currentMessage, order);
         } catch (UnsuccessfulPayment e) {
             transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
             throw e;
         }
     }
 
+    private void cleanUp(CallbackMessage currentMessage, Order order) {
+        emptyCart(order.cartId());
+        messageQueue.cleanUpRetriedKeys(currentMessage.idempotencyKey());
+    }
+
+    private @NonNull Order fetchOrder(CallbackMessage currentMessage) {
+        Long orderId = currentMessage.orderId();
+        log.info("Marking order with id {} as paid", orderId);
+        return Objects.requireNonNull(fetchOrder(orderId));
+    }
+
     private void checkPaymentStatus(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         if (PENDING.equals(currentMessage.status())) {
             log.debug("Transaction {} is pending. Proceeding with transfer.", currentMessage.transactionId());
         } else {
-            throw new UnsuccessfulPayment("Transaction " + currentMessage.transactionId() + " is not pending. Current status: " + currentMessage.status());
+            throw new UnsuccessfulPayment("Transaction " + currentMessage.transactionId() +
+                    " is not pending. Current status: " + currentMessage.status());
         }
     }
 
@@ -124,15 +145,6 @@ public class PaymentQueueWorker {
         UUID transactionId = currentMessage.transactionId();
         transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "");
         log.info("Transaction {} marked as successful in database.", transactionId);
-    }
-
-    private @NonNull Order markOrderCompleted(CallbackMessage currentMessage) {
-        Long orderId = currentMessage.orderId();
-        log.info("Marking order with id {} as paid", orderId);
-
-        Order order = Objects.requireNonNull(fetchOrder(orderId));
-        finishOrder(order);
-        return order;
     }
 
     protected void finishOrder(Order o) {
@@ -172,22 +184,12 @@ public class PaymentQueueWorker {
         log.debug("Fetching order with orderId {}", orderId);
 
         Order order = restClient.get()
-                .uri("/orders/{id}", orderId) // Siisti polkuparametri
+                .uri("/orders/{id}", orderId)
                 .retrieve()
                 .body(Order.class);
 
         log.debug("Order fetched {}", orderId);
         return order;
-    }
-
-    private void handleError(Exception e, CallbackMessage currentMessage) {
-        log.error("transaction failed", e);
-
-        if (currentMessage != null) {
-            log.warn("Updating transaction {} status to FAILED due to error.", currentMessage.transactionId());
-            transactionRepositoryPort.updateStatus(
-                    currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
-        }
     }
 
     @PreDestroy

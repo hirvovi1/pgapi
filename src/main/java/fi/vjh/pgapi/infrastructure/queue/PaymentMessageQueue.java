@@ -33,6 +33,7 @@ public class PaymentMessageQueue {
         boolean added = queue.offer(message);
         if (added) {
             log.info("Callback message added to background queue successfully. Transaction: {}", message.transactionId());
+
         }
         return added;
     }
@@ -57,5 +58,13 @@ public class PaymentMessageQueue {
 
     public CallbackMessage take() throws InterruptedException {
         return queue.take();
+    }
+
+    public void cleanUpRetriedKeys(UUID id) {
+        retriedKeys.removeIf(key -> key.equals(id));
+    }
+
+    boolean retryStackIsEmpty() {
+        return retriedKeys.isEmpty();
     }
 }
