@@ -1,12 +1,15 @@
 package fi.vjh.pgapi.infrastructure.queue;
 
+import fi.vjh.pgapi.application.port.AccountRepositoryPort;
 import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.TransferMoney;
 import fi.vjh.pgapi.domain.CallbackMessage;
 import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.domain.UnsuccessfulPayment;
+import fi.vjh.pgapi.infrastructure.mock.PaytrailMockProvider;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.Mockito;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
@@ -33,6 +36,7 @@ class PaymentIdempotencyIntegrationTest {
     private TransferMoney transferMoney;
     private TransactionRepositoryPort transactionRepositoryPort;
     private MockRestServiceServer mockServer;
+    private PaytrailMockProvider paytrailMockProvider;
 
     private final UUID transactionId = UUID.randomUUID();
     private final UUID idempotencyKey = UUID.randomUUID();
@@ -46,7 +50,7 @@ class PaymentIdempotencyIntegrationTest {
     void setUp() {
         transferMoney = mock(TransferMoney.class);
         transactionRepositoryPort = mock(TransactionRepositoryPort.class);
-
+        paytrailMockProvider = mock(PaytrailMockProvider.class);
         messageQueue = new PaymentMessageQueue();
 
         RestClient.Builder restClientBuilder = RestClient.builder()
@@ -73,6 +77,7 @@ class PaymentIdempotencyIntegrationTest {
         firstTryFailsAndReQueuesMessage(base, message);
 
         mockServer.reset(); // -------
+        Mockito.reset(transferMoney, transactionRepositoryPort);
 
         secondTrySucceeds(base, message);
 
@@ -101,15 +106,13 @@ class PaymentIdempotencyIntegrationTest {
     private void secondTrySucceeds(String base, CallbackMessage message) throws UnsuccessfulPayment, InterruptedException {
 
         assertThat(messageQueue.take()).isEqualTo(message);
-
         createMockExpectationsForSecondTry(base);
-
         when(transactionRepositoryPort.existsByIdempotencyKey(eq(idempotencyKey))).thenReturn(true);
 
         worker.process(message);
 
+        verify(transferMoney, times(0)).execute(accountIdFrom, accountIdTo, amountInCents);
         verify(transactionRepositoryPort, times(1)).updateStatus(transactionId, TransactionStatus.SUCCESS, "");
-        verify(transferMoney, times(1)).execute(accountIdFrom, accountIdTo, amountInCents);
     }
 
     private void createMockExpectationsForSecondTry(String base) {
