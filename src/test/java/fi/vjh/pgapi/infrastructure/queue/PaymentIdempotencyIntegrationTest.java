@@ -7,6 +7,8 @@ import fi.vjh.pgapi.domain.TransactionStatus;
 import fi.vjh.pgapi.domain.UnsuccessfulPayment;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
@@ -23,6 +25,8 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
 class PaymentIdempotencyIntegrationTest {
+
+    private static final Logger log = LoggerFactory.getLogger(PaymentIdempotencyIntegrationTest.class);
 
     private PaymentQueueWorker worker;
     private PaymentMessageQueue messageQueue;
@@ -85,6 +89,8 @@ class PaymentIdempotencyIntegrationTest {
         try {
             worker.process(message);
         } catch (Exception e) {
+            log.error("Simulated error during processing {}. Requeing for retry.",
+                    (message != null ? message.transactionId() : " unknown") + " error: " + e.getMessage());
             messageQueue.requeue(message);
         }
 
@@ -102,7 +108,7 @@ class PaymentIdempotencyIntegrationTest {
 
         worker.process(message);
 
-        verify(transactionRepositoryPort, times(2)).updateStatus(transactionId, TransactionStatus.SUCCESS, "");
+        verify(transactionRepositoryPort, times(1)).updateStatus(transactionId, TransactionStatus.SUCCESS, "");
         verify(transferMoney, times(1)).execute(accountIdFrom, accountIdTo, amountInCents);
     }
 

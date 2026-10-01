@@ -80,22 +80,14 @@ public class PaymentQueueWorker {
         try {
             checkPaymentStatus(currentMessage);
             executeTransfer(currentMessage);
-            markTransactionAsSuccess(currentMessage);
             Order order = markOrderCompleted(currentMessage);
+            markTransactionAsSuccess(currentMessage);
             emptyCart(order.cartId());
         } catch (UnsuccessfulPayment e) {
             transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
             throw e;
         }
     }
-
-
-
-
-
-
-
-
 
     private void checkPaymentStatus(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         if (PENDING.equals(currentMessage.status())) {
