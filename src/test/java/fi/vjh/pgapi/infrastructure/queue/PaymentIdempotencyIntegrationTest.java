@@ -113,7 +113,7 @@ class PaymentIdempotencyIntegrationTest {
         mockServer.expect(requestTo(base + "/orders/" + orderId + "/pay")).andExpect(method(HttpMethod.PUT))
                 .andRespond(withSuccess());
 
-        mockServer.expect(requestTo(base + "/cart/" + cartId + "/pay")).andExpect(method(HttpMethod.PUT))
+        mockServer.expect(requestTo(base + "/carts/" + cartId + "/pay")).andExpect(method(HttpMethod.PUT))
                 .andRespond(withSuccess());
     }
 }

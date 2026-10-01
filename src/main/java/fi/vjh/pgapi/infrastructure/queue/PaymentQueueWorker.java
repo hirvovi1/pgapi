@@ -161,14 +161,18 @@ public class PaymentQueueWorker {
     protected void emptyCart(Long cartId) {
         log.info("Emptying cart with id {}", cartId);
 
-        RestClient.ResponseSpec response = restClient.put()
-                .uri("/cart/{id}/pay", cartId)
-                .retrieve();
+        try {
+            RestClient.ResponseSpec response = restClient.put()
+                    .uri("/carts/{id}/pay", cartId)
+                    .retrieve();
 
-        if (response.toBodilessEntity().getStatusCode().isError()) {
-            log.warn("Cart emptying failed with id {}", cartId);
-        } else {
-            log.info("Cart with id {} emptied successfully", cartId);
+            if (response.toBodilessEntity().getStatusCode().isError()) {
+                log.warn("Cart emptying failed with id {}", cartId);
+            } else {
+                log.info("Cart with id {} emptied successfully", cartId);
+            }
+        } catch (Exception e) {
+            log.error("Cart emptying failed with id {}", cartId, e);
         }
     }
 
