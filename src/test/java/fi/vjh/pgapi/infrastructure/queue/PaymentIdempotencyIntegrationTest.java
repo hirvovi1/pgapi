@@ -1,6 +1,5 @@
 package fi.vjh.pgapi.infrastructure.queue;
 
-import fi.vjh.pgapi.application.port.AccountRepositoryPort;
 import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.TransferMoney;
 import fi.vjh.pgapi.domain.CallbackMessage;
@@ -101,7 +100,7 @@ class PaymentIdempotencyIntegrationTest {
             messageQueue.requeue(message);
         }
 
-        verify(transferMoney, times(1)).execute(accountIdFrom, accountIdTo, amountInCents);
+        verify(transferMoney, times(1)).execute(accountIdFrom, accountIdTo, amountInCents, transactionId);
         verify(transactionRepositoryPort, never()).updateStatus(eq(transactionId), eq(TransactionStatus.FAILED), anyString());
     }
 
@@ -109,13 +108,21 @@ class PaymentIdempotencyIntegrationTest {
 
         assertThat(messageQueue.take()).isEqualTo(message);
         createMockExpectationsForSecondTry(base);
+
         when(transactionRepositoryPort.existsByIdempotencyKey(eq(idempotencyKey))).thenReturn(true);
+
+        TransactionRepositoryPort.TransactionStatusInfo statusInfo =
+                new TransactionRepositoryPort.TransactionStatusInfo(TransactionStatus.SUCCESS, "");
+
+        when(transactionRepositoryPort.findStatusById(eq(transactionId)))
+                .thenReturn(java.util.Optional.of(statusInfo));
 
         worker.process(message);
 
-        verify(transferMoney, times(0)).execute(accountIdFrom, accountIdTo, amountInCents);
-        verify(transactionRepositoryPort, times(1)).updateStatus(transactionId, TransactionStatus.SUCCESS, "");
+        verify(transferMoney, times(0)).execute(any(), any(), anyLong(), any());
+
     }
+
 
     private void createMockExpectationsForSecondTry(String base) {
         mockServer.expect(requestTo(base + "/orders/" + orderId)).andExpect(method(HttpMethod.GET))

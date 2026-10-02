@@ -81,8 +81,7 @@ class PaymentChainTest {
 
         worker.process(message);
 
-        verify(transferMoney).execute(accountIdFrom, accountIdTo, amountInCents);
-        verify(transactionRepositoryPort).updateStatus(transactionId, TransactionStatus.SUCCESS, "");
+        verify(transferMoney).execute(accountIdFrom, accountIdTo, amountInCents, transactionId);
 
         mockServer.verify();
     }
@@ -109,7 +108,7 @@ class PaymentChainTest {
         );
 
         doThrow(new IllegalArgumentException("Insufficient funds"))
-                .when(transferMoney).execute(accountIdFrom, accountIdTo, amountInCents);
+                .when(transferMoney).execute(accountIdFrom, accountIdTo, amountInCents, transactionId);
 
         assertThrows(UnsuccessfulPayment.class, () -> worker.process(message));
 

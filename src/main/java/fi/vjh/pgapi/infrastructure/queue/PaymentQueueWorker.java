@@ -15,7 +15,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.client.RestClient;
 
 import java.util.Objects;
-import java.util.UUID;
+import java.util.Optional;
 
 import static fi.vjh.pgapi.domain.TransactionStatus.PENDING;
 
@@ -86,19 +86,19 @@ public class PaymentQueueWorker {
         log.debug("current message: {}", currentMessage);
 
         try {
-            checkPaymentStatus(currentMessage);
+            verifyPaymentIsPending(currentMessage);
             executeTransfer(currentMessage);
-            Order order = fetchOrder(currentMessage);
-            finishOrder(order);
-            markTransactionAsSuccess(currentMessage);
-            cleanUp(currentMessage, order);
+            finishOrderAndCleanUp(currentMessage);
         } catch (UnsuccessfulPayment e) {
             transactionRepositoryPort.updateStatus(currentMessage.transactionId(), TransactionStatus.FAILED, e.getMessage());
             throw e;
         }
     }
 
-    private void cleanUp(CallbackMessage currentMessage, Order order) {
+    private void finishOrderAndCleanUp(CallbackMessage currentMessage) {
+        Order order = fetchOrder(currentMessage);
+        finishOrder(order);
+
         emptyCart(order.cartId());
         messageQueue.cleanUpRetriedKeys(currentMessage.idempotencyKey());
     }
@@ -109,7 +109,7 @@ public class PaymentQueueWorker {
         return Objects.requireNonNull(fetchOrder(orderId));
     }
 
-    private void checkPaymentStatus(CallbackMessage currentMessage) throws UnsuccessfulPayment {
+    private void verifyPaymentIsPending(CallbackMessage currentMessage) throws UnsuccessfulPayment {
         if (PENDING.equals(currentMessage.status())) {
             log.debug("Transaction {} is pending. Proceeding with transfer.", currentMessage.transactionId());
         } else {
@@ -122,11 +122,12 @@ public class PaymentQueueWorker {
         log.info("Money transfer started for tx: {}", currentMessage.transactionId());
 
         try {
-            if (!isUsed(currentMessage.idempotencyKey())) {
+            if (shouldPay(currentMessage)) {
                 transferMoney.execute(
                         currentMessage.accountIdFrom(),
                         currentMessage.accountIdTo(),
-                        currentMessage.amountInCents()
+                        currentMessage.amountInCents(),
+                        currentMessage.transactionId()
                 );
             } else {
                 log.info("duplicate money transfer {} detected. skipping.", currentMessage.transactionId());
@@ -136,15 +137,13 @@ public class PaymentQueueWorker {
         }
     }
 
-    private boolean isUsed(UUID idempotencyKey) {
-        return transactionRepositoryPort.existsByIdempotencyKey(idempotencyKey);
-    }
-
-    private void markTransactionAsSuccess(CallbackMessage currentMessage) {
-        log.info("Transaction {} is being marked as successful...", currentMessage.transactionId());
-        UUID transactionId = currentMessage.transactionId();
-        transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "");
-        log.info("Transaction {} marked as successful in database.", transactionId);
+    private boolean shouldPay(CallbackMessage currentMessage) {
+        if (transactionRepositoryPort.existsByIdempotencyKey(currentMessage.idempotencyKey())) {
+            Optional<TransactionRepositoryPort.TransactionStatusInfo> optional =
+                    transactionRepositoryPort.findStatusById(currentMessage.transactionId());
+            return optional.isEmpty() || !optional.get().status().equals(TransactionStatus.SUCCESS);
+        }
+        return true;
     }
 
     protected void finishOrder(Order o) {

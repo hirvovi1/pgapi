@@ -1,7 +1,9 @@
 package fi.vjh.pgapi.application.usecase;
 
 import fi.vjh.pgapi.application.port.AccountRepositoryPort;
+import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.domain.Account;
+import fi.vjh.pgapi.domain.TransactionStatus;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -11,14 +13,16 @@ import java.util.UUID;
 @Service
 public class TransferMoney {
     private final AccountRepositoryPort accountRepositoryPort;
+    private final TransactionRepositoryPort transactionRepositoryPort;
 
-    public TransferMoney(AccountRepositoryPort accountRepositoryPort) {
+    public TransferMoney(AccountRepositoryPort accountRepositoryPort, TransactionRepositoryPort transactionRepositoryPort) {
         this.accountRepositoryPort = accountRepositoryPort;
+        this.transactionRepositoryPort = transactionRepositoryPort;
     }
 
 
     @Transactional
-    public void execute(UUID sourceAccountId, UUID targetAccountId, long amountCents) {
+    public void execute(UUID sourceAccountId, UUID targetAccountId, long amountCents, UUID transactionId) {
         Objects.requireNonNull(sourceAccountId, "Source account ID must not be null");
         Objects.requireNonNull(targetAccountId, "Target account ID must not be null");
 
@@ -43,5 +47,6 @@ public class TransferMoney {
 
         accountRepositoryPort.save(sourceAccount);
         accountRepositoryPort.save(targetAccount);
+        transactionRepositoryPort.updateStatus(transactionId, TransactionStatus.SUCCESS, "Transfer completed successfully");
     }
 }
