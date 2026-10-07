@@ -36,7 +36,8 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
                 message.accountIdTo(),
                 message.amountInCents(),
                 TransactionStatus.PENDING,
-                ""
+                "",
+                message.orderId()
         );
         transactionRepository.save(row);
     }
@@ -64,7 +65,8 @@ public class TransactionRepositoryAdapter implements TransactionRepositoryPort {
                 row.getAccountIdFrom(),
                 row.getAccountIdTo(),
                 row.getAmountInCents(),
-                row.getStatus()
+                row.getStatus(),
+                row.getOrderId()
         ));
     }
 

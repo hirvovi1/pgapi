@@ -1,6 +1,7 @@
 package fi.vjh.pgapi;
 
 import fi.vjh.pgapi.application.port.AccountRepositoryPort;
+import fi.vjh.pgapi.application.port.TransactionRepositoryPort;
 import fi.vjh.pgapi.application.usecase.TransferMoney;
 import fi.vjh.pgapi.domain.Account;
 import org.junit.jupiter.api.Test;
@@ -14,7 +15,9 @@ class TransferMoneyTest {
 
     // Pure domain unit test - executes instantly without bootstrapping Spring
     private final AccountRepositoryPort repositoryPortMock = mock(AccountRepositoryPort.class);
-    private final TransferMoney transferMoney = new TransferMoney(repositoryPortMock);
+    private final TransactionRepositoryPort transactionRepositoryPortMock = mock(TransactionRepositoryPort.class);
+    private final TransferMoney transferMoney = new TransferMoney(repositoryPortMock, transactionRepositoryPortMock);
+    private final UUID transactionId  = UUID.randomUUID();
 
     @Test
     void shouldThrowExceptionWhenSourceAccountHasInsufficientFunds() {
@@ -28,7 +31,7 @@ class TransferMoneyTest {
         when(repositoryPortMock.findById(targetId)).thenReturn(Optional.of(targetAccount));
 
         // Act & Assert - Attempting to transfer 40.00 EUR when balance is only 10.00 EUR
-        assertThatThrownBy(() -> transferMoney.execute(sourceId, targetId, 4000L))
+        assertThatThrownBy(() -> transferMoney.execute(sourceId, targetId, 4000L, transactionId))
                 .isInstanceOf(IllegalArgumentException.class)
                 .hasMessageContaining("Insufficient funds");
 

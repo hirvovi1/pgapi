@@ -139,7 +139,8 @@ public class PaymentController {
                 request.accountIdFrom(),
                 request.accountIdTo(),
                 request.amountInCents(),
-                TransactionStatus.PENDING
+                TransactionStatus.PENDING,
+                request.orderId()
         );
     }
 
@@ -194,7 +195,8 @@ public class PaymentController {
                 payload.amountCents(),
                 "OK".equalsIgnoreCase(payload.status())
                         ? TransactionStatus.PENDING
-                        : TransactionStatus.FAILED
+                        : TransactionStatus.FAILED,
+                transaction.orderId()
         ));
     }
 
@@ -211,6 +213,7 @@ public class PaymentController {
             UUID idempotencyKey,
             UUID accountIdFrom,
             UUID accountIdTo,
+            long orderId,
             long amountInCents
     ) {    }
 

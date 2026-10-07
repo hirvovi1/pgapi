@@ -1,6 +1,5 @@
 package fi.vjh.pgapi.domain;
 
-import fi.vjh.pgapi.PaymentController;
 import org.jspecify.annotations.NonNull;
 
 import java.util.UUID;
@@ -11,6 +10,13 @@ public record CallbackMessage(
         UUID accountIdFrom,
         UUID accountIdTo,
         long amountInCents,
-        TransactionStatus status
+        TransactionStatus status,
+        Long orderId
 ) {
+
+    @NonNull
+    public String toString() {
+        return "CallbackMessage(idempotencyKey=%s, transactionId=%s, accountIdFrom=%s, accountIdTo=%s, amountInCents=%d, status=%s, orderId=%s)".formatted(
+                idempotencyKey, transactionId, accountIdFrom, accountIdTo, amountInCents, status, orderId);
+    }
 }
